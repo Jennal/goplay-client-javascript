@@ -17,6 +17,11 @@
 
         "STAT_OK": 0x00
     };
+    var heartbeat = {
+        "TIMEOUT": 3000,
+        "INTERNAL": 15000,
+        "MAX_TIMEOUT": 3
+    };
     var ws = null; //websocket Object
 
     /* vvvvvv Utility Functions Start vvvvvv */
@@ -89,7 +94,7 @@
             // Uint8Array
             var result = dest;
             if (dest.length < (doffset + length)) {
-                var result = new ByteArray(doffset + length);
+                result = new ByteArray(doffset + length);
             }
 
             for (var i = 0; i < dest.length; i++) {
@@ -97,9 +102,25 @@
             }
 
             for (var index = 0; index < length; index++) {
-                dest[doffset++] = src[soffset++];
+                result[doffset++] = src[soffset++];
             }
+
+            return result;
         }
+    }
+
+    function IdGen(max) {
+        this.id = 0;
+        this.max = max;
+        return this;
+    }
+
+    IdGen.prototype.next = function () {
+        if (this.id++ > this.max) {
+            this.id = 0;
+        }
+
+        return this.id;
     }
 
     ByteArray.prototype.writeUint8 = function (val) {
@@ -125,11 +146,25 @@
     }
 
     ByteArray.prototype.writeString = function (val) {
+        if (!val || val.length <= 0) return this;
+
         this.woffset = this.woffset || 0;
-        var bytes = strdecode(val);
-        copyArray(this, this.woffset, bytes, 0, bytes.length);
-        this.woffset += bytes.length;
-        return this;
+        var bytes = strencode(val);
+        // console.log(bytes, bytes.length); 
+        var result = copyArray(this, this.woffset, bytes, 0, bytes.length);
+        result.woffset = this.woffset + bytes.length;
+        return result;
+    }
+
+    ByteArray.prototype.writeBytes = function (data) {
+        var result = copyArray(this, this.length, data, 0, data.length);
+        result.woffset = this.woffset + data.length;
+        return result;
+    }
+
+    ByteArray.prototype.hasReadSize = function (len) {
+        this.roffset = this.roffset || 0;
+        return len <= this.length - this.roffset;
     }
 
     ByteArray.prototype.readUint8 = function () {
@@ -158,10 +193,13 @@
     }
 
     ByteArray.prototype.readString = function (len) {
+        if (len <= 0) return "";
+
         this.roffset = this.roffset || 0;
         if (this.roffset + len > this.length) return undefined;
 
-        var bytes = this.slice(this.roffset, len);
+        var bytes = this.slice(this.roffset, this.roffset + len);
+        // console.log(bytes, bytes.length, len);
         this.roffset += len;
         return strdecode(bytes);
     }
@@ -179,8 +217,12 @@
         return this;
     }
 
+    function header_size(header) {
+        return 7 + header.route.length;
+    }
+
     function header_encode(header) {
-        var bytes = new ByteArray(7 + header.route.length);
+        var bytes = new ByteArray(header_size(header));
 
         bytes = bytes.writeUint8(header.type)
             .writeUint8(header.encoding)
@@ -203,6 +245,7 @@
         header.contentSize = bytes.readUint16();
 
         var routeLen = bytes.readUint8();
+        // console.log(routeLen);
         header.route = bytes.readString(routeLen);
 
         return header;
@@ -211,7 +254,7 @@
 
     /* vvvvvv Event Emitter Start vvvvvv */
     function Emitter(obj) {
-        if (obj) return inherit(obj, this);
+        if (obj) return inherit(obj, Emitter);
     }
 
     /**
@@ -223,6 +266,7 @@
      * @api public
      */
     Emitter.prototype.on =
+        Emitter.prototype.addListener =
         Emitter.prototype.addEventListener = function (event, fn) {
             this._callbacks = this._callbacks || {};
             (this._callbacks[event] = this._callbacks[event] || [])
@@ -344,6 +388,11 @@
 
     goplay.connect = function (host, port) {
         var url = "ws://" + host + ":" + port + "/ws";
+        if (goplay.isConnected() && goplay.url == url) return;
+
+        if (goplay.isConnected() && goplay.url != url) goplay.disconnect();
+
+        goplay.url = url;
         ws = new WebSocket(url);
         ws.binaryType = 'arraybuffer';
         ws.onopen = goplay.onopen;
@@ -360,22 +409,90 @@
         ws = null;
     }
 
+    goplay.isConnected = function () {
+        if (!ws) return false;
+        if (ws.readyState > 1) return false;
+
+        return true;
+    }
+
     goplay.send = function (header, data) {
-        var bytes = header_encode(header)
-        bytes = copyArray(bytes, bytes.length, data, 0, data.length);
+        data = data || "";
+        // console.log("data:", data);
+        // data = strencode(data);
+        // console.log("data:", data);
+        header.contentSize = data.length;
+        var bytes = header_encode(header);
+        // console.log(header_decode(bytes));
+        // bytes = copyArray(bytes, bytes.length, data, 0, data.length);
+        if (header.contentSize > 0) bytes = bytes.writeString(data);
+        // console.log(bytes);
         ws.send(bytes.buffer);
     }
 
-    goplay.recv = function (len) {
+    goplay.recv = function () {
+        if (!goplay.buffer || !goplay.buffer.length) return null;
 
+        var header = header_decode(goplay.buffer);
+        if (!goplay.buffer.hasReadSize(header.contentSize)) {
+            goplay.buffer.roffset -= header_size(header);
+            return null;
+        }
+
+        var data = null;
+        if (header.contentSize > 0) data = goplay.buffer.readString(header.contentSize);
+
+        var start = header_size(header) + header.contentSize;
+        goplay.buffer = goplay.buffer.slice(start);
+
+        return {
+            "header": header,
+            "data": data
+        };
     }
 
     goplay.onopen = function (event) {
         console.log("onopen", event)
+        goplay.startHeartbeat();
     }
 
     goplay.onmessage = function (event) {
-        console.log("onmessage", event)
+        var data = new ByteArray(event.data);
+        // console.log("onmessage", event, data);
+
+        if (!goplay.buffer) {
+            goplay.buffer = data;
+        } else {
+            goplay.buffer = goplay.buffer.writeBytes(data);
+        }
+
+        var pack = goplay.recv();
+        if (!pack) return;
+
+        var header = pack.header;
+        var data = JSON.parse(pack.data);
+        if(header.type != pkg.PKG_HEARTBEAT && header.type != pkg.PKG_HEARTBEAT_RESPONSE)
+        {
+            console.log("Recv: ", header, data);
+        }
+        switch (header.type) {
+            case pkg.PKG_RESPONSE:
+                goplay.onResponse(header, data);
+                break;
+            case pkg.PKG_PUSH:
+                goplay.onPush(header, data);
+                break;
+            case pkg.PKG_HEARTBEAT:
+                header.type = pkg.PKG_HEARTBEAT_RESPONSE;
+                goplay.send(header);
+                break;
+            case pkg.PKG_HEARTBEAT_RESPONSE:
+                goplay.onHeartbeat(header, data);
+                break;
+            default:
+                console.log("should not be here!!", header, data);
+                break;
+        }
     }
 
     goplay.onerror = function (event) {
@@ -384,8 +501,84 @@
 
     goplay.onclose = function (event) {
         console.log("onclose", event)
+        goplay.stopHeartbeat();
     }
 
+    goplay.startHeartbeat = function () {
+        goplay.heartbeat = {
+            idGen: new IdGen(255),
+            intervalId: setInterval(function () {
+                var id = goplay.heartbeat.idGen.next();
+                goplay.send(new Header(pkg.PKG_HEARTBEAT, pkg.ENCODING_JSON, id, pkg.STAT_OK, 0, ""));
+                goplay.heartbeat.timeOutMap[id] = setTimeout(function () {
+                    ++goplay.heartbeat.timeOutCount;
+                    if (goplay.heartbeat.timeOutCount > heartbeat.MAX_TIMEOUT) {
+                        console.log("heartbeat timeout count > " + heartbeat.MAX_TIMEOUT);
+                        goplay.disconnect();
+                    }
+                }, heartbeat.TIMEOUT);
+            }, heartbeat.INTERNAL),
+            timeOutMap: {},
+            timeOutCount: 0
+        };
+    }
+
+    goplay.stopHeartbeat = function () {
+        if (!goplay.heartbeat || !goplay.heartbeat.intervalId) return;
+        clearInterval(goplay.heartbeat.intervalId);
+        for (var key in goplay.heartbeat.timeOutMap) {
+            if (!goplay.heartbeat.timeOutMap.hasOwnProperty(key)) continue;
+
+            var timeOutId = goplay.heartbeat.timeOutMap[key];
+            clearTimeout(timeOutId);
+        }
+
+        goplay.heartbeat = null;
+    }
+
+    goplay.onHeartbeat = function (header, data) {
+        var timeOutId = goplay.heartbeat.timeOutMap[header.id];
+        clearTimeout(timeOutId);
+    }
+
+    goplay.onResponse = function (header, data) {
+        console.log("key: ", goplay.getCallbackKey(header));
+        console.log("onResponse: ", header, data);
+        goplay.emit(goplay.getCallbackKey(header), data);
+    }
+
+    goplay.onPush = function (header, data) {
+        goplay.emit(header.route, data);
+    }
+
+    goplay.getCallbackKey = function (header) {
+        return header.route + "-" + header.id;
+    }
+
+    goplay.request = function (route, data, callback) {
+        goplay.idGen = goplay.idGen || new IdGen(255);
+
+        var header = new Header(pkg.PKG_REQUEST, pkg.ENCODING_JSON, goplay.idGen.next(), pkg.STAT_OK, 0, route);
+        data = JSON.stringify(data);
+
+        console.log("key: ", goplay.getCallbackKey(header));
+        goplay.once(goplay.getCallbackKey(header), callback);
+        goplay.send(header, data);
+    }
+
+    goplay.notify = function (route, data) {
+        goplay.idGen = goplay.idGen || new IdGen(255);
+
+        var header = new Header(pkg.PKG_NOTIFY, pkg.ENCODING_JSON, goplay.idGen.next(), pkg.STAT_OK, 0, route);
+        data = JSON.stringify(data);
+
+        goplay.send(header, data);
+    }
+
+    goplay = Emitter(goplay);
+
+    exports.Header = Header;
+    exports.Emitter = Emitter;
     exports.goplay = goplay;
 })(
     typeof (window) == "undefined" ? module.exports : window,
