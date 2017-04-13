@@ -15,12 +15,16 @@
         "ENCODING_BSON": 0x03,
         "ENCODING_PROTOBUF": 0x04,
 
-        "STAT_OK": 0x00
+        "STAT_OK": 0x00,
+        "STAT_ERR_TIMEOUT": 0x93
     };
     var heartbeat = {
         "TIMEOUT": 3000,
         "INTERNAL": 15000,
         "MAX_TIMEOUT": 3
+    };
+    var request = {
+        "TIMEOUT": 3000
     };
     var ws = null; //websocket Object
 
@@ -471,8 +475,7 @@
 
         var header = pack.header;
         var data = JSON.parse(pack.data);
-        if(header.type != pkg.PKG_HEARTBEAT && header.type != pkg.PKG_HEARTBEAT_RESPONSE)
-        {
+        if (header.type != pkg.PKG_HEARTBEAT && header.type != pkg.PKG_HEARTBEAT_RESPONSE) {
             console.log("Recv: ", header, data);
         }
         switch (header.type) {
@@ -544,7 +547,7 @@
     goplay.onResponse = function (header, data) {
         console.log("key: ", goplay.getCallbackKey(header));
         console.log("onResponse: ", header, data);
-        goplay.emit(goplay.getCallbackKey(header), data);
+        goplay.emit(goplay.getCallbackKey(header), header.status, data);
     }
 
     goplay.onPush = function (header, data) {
@@ -555,14 +558,30 @@
         return header.route + "-" + header.id;
     }
 
-    goplay.request = function (route, data, callback) {
+    goplay.request = function (route, data, successCb, failCb) {
         goplay.idGen = goplay.idGen || new IdGen(255);
 
         var header = new Header(pkg.PKG_REQUEST, pkg.ENCODING_JSON, goplay.idGen.next(), pkg.STAT_OK, 0, route);
         data = JSON.stringify(data);
 
-        console.log("key: ", goplay.getCallbackKey(header));
-        goplay.once(goplay.getCallbackKey(header), callback);
+        var key = goplay.getCallbackKey(header);
+        // console.log("key: ", key);
+        var timeOutId = setTimeout(function () {
+            goplay.emit(key, pkg.STAT_ERR_TIMEOUT, {
+                "Code": pkg.STAT_ERR_TIMEOUT,
+                "Message": "request time out"
+            });
+        }, request.TIMEOUT);
+        goplay.once(key, function (status, data) {
+            clearTimeout(timeOutId);
+
+            if (status == pkg.STAT_OK) {
+                successCb(data);
+            } else {
+                failCb(data);
+            }
+        });
+
         goplay.send(header, data);
     }
 
@@ -576,6 +595,7 @@
     }
 
     goplay = Emitter(goplay);
+    goplay.pkg = pkg;
 
     exports.Header = Header;
     exports.Emitter = Emitter;

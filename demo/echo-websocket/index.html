@@ -21,6 +21,17 @@
                 goplay.request("echo.services.echo", data, function(line) {
                     console.log("Request callback: ", line);
                     writeLn("Request callback: " + line);
+                }, function(err) {
+                    console.log(err.Code, err.Message);
+                    writeLn("Request Error: [" + err.Code + "] " + err.Message);
+                });
+
+                goplay.request("echo.services.error", data, function(line) {
+                    console.log("Request callback: ", line);
+                    writeLn("Request callback: " + line);
+                }, function(err) {
+                    console.log(err.Code, err.Message);
+                    writeLn("Request Error: [" + err.Code + "] " + err.Message);
                 });
             }
 
