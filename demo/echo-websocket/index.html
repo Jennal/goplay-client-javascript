@@ -9,8 +9,12 @@
         function writeLn(line) {
             var content = document.getElementById("content");
             var d = new Date();
-            var dateStr = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate() + " " +
-                d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds();
+            var dateStr = d.getFullYear() +
+                "-" + ("0" + (d.getMonth() + 1)).slice(-2) +
+                "-" + ("0" + d.getDate()).slice(-2) +
+                " " + ("0" + d.getHours()).slice(-2) +
+                ":" + ("0" + d.getMinutes()).slice(-2) +
+                ":" + ("0" + d.getSeconds()).slice(-2);
             content.innerHTML = "[" + dateStr + "] " + line + "<br />" + content.innerHTML;
         }
 
