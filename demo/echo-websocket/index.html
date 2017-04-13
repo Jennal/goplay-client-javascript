@@ -1,54 +1,63 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
-        <title>Goplay Client Websocket Test</title>
-        <script src="../../goplay.client.js"></script>
-        <script>
-            function writeLn(line) {
-                var content = document.getElementById("content");
-                content.innerHTML += line + "<br />";
-            }
 
-            function sendClicked() {
-                var elem = document.getElementById("data");
-                var data = elem.value;
-                elem.value = "";
-                
-                if(!data || data.length == 0) return;
+<head>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <title>Goplay Client Websocket Test</title>
+    <script src="../../goplay.client.js"></script>
+    <script>
+        function writeLn(line) {
+            var content = document.getElementById("content");
+            var d = new Date();
+            var dateStr = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate() + " " +
+                d.getHours() + ":" + d.getMinutes() + ":" + d.getSeconds();
+            content.innerHTML = "[" + dateStr + "] " + line + "<br />" + content.innerHTML;
+        }
 
-                goplay.notify("echo.services.notify", data);
-                goplay.request("echo.services.echo", data, function(line) {
-                    console.log("Request callback: ", line);
-                    writeLn("Request callback: " + line);
-                }, function(err) {
-                    console.log(err.Code, err.Message);
-                    writeLn("Request Error: [" + err.Code + "] " + err.Message);
-                });
+        function sendClicked() {
+            var elem = document.getElementById("data");
+            var data = elem.value;
+            elem.value = "";
 
-                goplay.request("echo.services.error", data, function(line) {
-                    console.log("Request callback: ", line);
-                    writeLn("Request callback: " + line);
-                }, function(err) {
-                    console.log(err.Code, err.Message);
-                    writeLn("Request Error: [" + err.Code + "] " + err.Message);
-                });
-            }
+            if (!data || data.length == 0) return;
 
-            goplay.on("echo.push", function(data) {
-                console.log("echo.push: ", data)
-                writeLn("echo.push: " + data);
-            })
-            goplay.connect("localhost", 1234)
-        </script>
-    </head>
-    <body>
-        <div>
-            <input id="data" type="text" name="data" />
-            <input type="button" value="Send" onclick="javascript:sendClicked();" />
-        </div>
-        <p id="content">
+            goplay.notify("echo.services.notify", data);
+            goplay.request("echo.services.echo", data, function (line) {
+                console.log("Request callback: ", line);
+                writeLn("Request callback: " + line);
+            }, function (err) {
+                console.log(err.Code, err.Message);
+                writeLn("Request Error: [" + err.Code + "] " + err.Message);
+            });
+        }
 
-        </p>
-    </body>
+        function requestError() {
+            goplay.request("echo.services.error", "", function (line) {
+                console.log("Request error callback: ", line);
+                writeLn("Request error callback: " + line);
+            }, function (err) {
+                console.log(err.Code, err.Message);
+                writeLn("Request Error: [" + err.Code + "] " + err.Message);
+            });
+        }
+
+        goplay.on("echo.push", function (data) {
+            console.log("echo.push: ", data)
+            writeLn("echo.push: " + data);
+        })
+        goplay.connect("localhost", 1234)
+    </script>
+</head>
+
+<body>
+    <div>
+        <input id="data" type="text" name="data" />
+        <input type="button" value="Send" onclick="javascript:sendClicked();" />
+        <input type="button" value="Test Error" onclick="javascript:requestError();" />
+    </div>
+    <p id="content">
+
+    </p>
+</body>
+
 </html>
