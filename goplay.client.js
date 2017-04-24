@@ -542,6 +542,7 @@
     goplay.onHeartbeat = function (header, data) {
         var timeOutId = goplay.heartbeat.timeOutMap[header.id];
         clearTimeout(timeOutId);
+        goplay.heartbeat.timeOutCount = 0
     }
 
     goplay.onResponse = function (header, data) {
