@@ -154,7 +154,7 @@
 
         this.woffset = this.woffset || 0;
         var bytes = strencode(val);
-        // console.log(bytes, bytes.length); 
+        // console.log(val, bytes, bytes.length); 
         var result = copyArray(this, this.woffset, bytes, 0, bytes.length);
         result.woffset = this.woffset + bytes.length;
         return result;
@@ -425,11 +425,12 @@
         // console.log("data:", data);
         // data = strencode(data);
         // console.log("data:", data);
-        header.contentSize = data.length;
+        var strBuffer = strencode(data);
+        header.contentSize = strBuffer.length;
         var bytes = header_encode(header);
         // console.log(header_decode(bytes));
         // bytes = copyArray(bytes, bytes.length, data, 0, data.length);
-        if (header.contentSize > 0) bytes = bytes.writeString(data);
+        if (header.contentSize > 0) bytes = bytes.writeBytes(strBuffer);
         // console.log(bytes);
         ws.send(bytes.buffer);
     }
