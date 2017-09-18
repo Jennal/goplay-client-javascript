@@ -170,6 +170,8 @@
     }
 
     ByteArray.prototype.writeBytes = function (data) {
+        if (!data || !data.length) return this;
+
         var result = copyArray(this, this.length, data, 0, data.length);
         result.woffset = this.woffset + data.length;
         return result;
@@ -471,17 +473,16 @@
     }
 
     goplay.send = function (header, data) {
-        data = data || "";
-        // console.log("data:", data);
+        data = data || undefined;
         // data = strencode(data);
         // console.log("data:", data);
         // var strBuffer = strencode(data);
-        header.contentSize = data.length;
+        header.contentSize = data ? data.length : 0;
         var bytes = header_encode(header);
         // console.log(header_decode(bytes));
         // bytes = copyArray(bytes, bytes.length, data, 0, data.length);
         if (header.contentSize > 0) bytes = bytes.writeBytes(data);
-        // console.log(bytes);
+        //console.log("send:", bytes);
         ws.send(bytes.buffer);
     }
 
