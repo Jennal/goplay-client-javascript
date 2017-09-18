@@ -2,22 +2,31 @@
     /* defines */
     var goplay = {};
     var pkg = {
-        "PKG_NOTIFY": 0x00,
-        "PKG_REQUEST": 0x01,
-        "PKG_RESPONSE": 0x02,
-        "PKG_PUSH": 0x03,
-        "PKG_HEARTBEAT": 0x04,
-        "PKG_HEARTBEAT_RESPONSE": 0x05,
+        "PKG_NOTIFY"              : 0x00,
+        "PKG_REQUEST"             : 0x01,
+        "PKG_RESPONSE"            : 0x02,
+        "PKG_PUSH"                : 0x03,
+        "PKG_HEARTBEAT"           : 0x04,
+        "PKG_HEARTBEAT_RESPONSE"  : 0x05,
+        "PKG_HAND_SHAKE"          : 0x06,
+        "PKG_HAND_SHAKE_RESPONSE" : 0x07,
 
-        "ENCODING_NONE": 0x00,
-        "ENCODING_GOB": 0x01,
-        "ENCODING_JSON": 0x02,
-        "ENCODING_BSON": 0x03,
+        "ENCODING_NONE"    : 0x00,
+        "ENCODING_GOB"     : 0x01,
+        "ENCODING_JSON"    : 0x02,
+        "ENCODING_BSON"    : 0x03,
         "ENCODING_PROTOBUF": 0x04,
 
-        "STAT_OK": 0x00,
-        "STAT_ERR_TIMEOUT": 0x93
+        "STAT_OK"                : 0x00,
+        "STAT_ERR"               : 0x90,
+        "STAT_ERR_WRONG_PARAMS"  : 0x91,
+        "STAT_ERR_DECODE_FAILED" : 0x92,
+        "STAT_ERR_TIMEOUT"       : 0x93,
+        "STAT_ERR_EMPTY_RESULT"  : 0x94
     };
+    var defaults = {
+        "encoding": pkg.ENCODING_JSON,
+    }
     var heartbeat = {
         "TIMEOUT": 3000,
         "INTERNAL": 15000,
@@ -196,8 +205,8 @@
         return h << 16 | l;
     }
 
-    ByteArray.prototype.readString = function (len) {
-        if (len <= 0) return "";
+    ByteArray.prototype.readBytes = function (len) {
+        if (len <= 0) return undefined;
 
         this.roffset = this.roffset || 0;
         if (this.roffset + len > this.length) return undefined;
@@ -205,9 +214,50 @@
         var bytes = this.slice(this.roffset, this.roffset + len);
         // console.log(bytes, bytes.length, len);
         this.roffset += len;
+        return bytes;
+    }
+
+    ByteArray.prototype.readString = function (len) {
+        var bytes = this.readBytes(len);
+        if (bytes == undefined) return "";
+
         return strdecode(bytes);
     }
     /* ^^^^^^ Utility Functions End ^^^^^^ */
+
+    /* vvvvvv Encoder Start vvvvvv */
+    var jsonEncoder = {
+        "encode": function(obj) {
+            obj = JSON.stringify(obj);
+            return strencode(obj);
+        },
+        "decode": function(buffer) {
+            buffer = strdecode(buffer);
+            return JSON.parse(buffer);
+        }
+    };
+
+    var protobufEncoder = {
+        "encode": function(obj) {
+
+        },
+        "decode": function(buffer) {
+
+        }
+    };
+
+    function GetEncoder(encoding) {
+        switch (encoding) {
+            case pkg.ENCODING_JSON:
+                return jsonEncoder;
+            case pkg.ENCODING_PROTOBUF:
+                return protobufEncoder;
+            default:
+                console.log("should not be here!!", encoding);
+                break;
+        }
+    }
+    /* ^^^^^^ Encoder End ^^^^^^ */
 
     /* vvvvvv Header Start vvvvvv */
     function Header(type, encoding, id, status, contentSize, route) {
@@ -425,12 +475,12 @@
         // console.log("data:", data);
         // data = strencode(data);
         // console.log("data:", data);
-        var strBuffer = strencode(data);
-        header.contentSize = strBuffer.length;
+        // var strBuffer = strencode(data);
+        header.contentSize = data.length;
         var bytes = header_encode(header);
         // console.log(header_decode(bytes));
         // bytes = copyArray(bytes, bytes.length, data, 0, data.length);
-        if (header.contentSize > 0) bytes = bytes.writeBytes(strBuffer);
+        if (header.contentSize > 0) bytes = bytes.writeBytes(data);
         // console.log(bytes);
         ws.send(bytes.buffer);
     }
@@ -445,7 +495,7 @@
         }
 
         var data = null;
-        if (header.contentSize > 0) data = goplay.buffer.readString(header.contentSize);
+        if (header.contentSize > 0) data = goplay.buffer.readBytes(header.contentSize);
 
         var start = header_size(header) + header.contentSize;
         goplay.buffer = goplay.buffer.slice(start);
@@ -475,7 +525,11 @@
         if (!pack) return;
 
         var header = pack.header;
-        var data = JSON.parse(pack.data);
+        var data = undefined;
+        if (header.contentSize > 0) {
+            var encoder = GetEncoder(pack.header.encoding);
+            data = encoder.decode(pack.data);
+        }
         if (header.type != pkg.PKG_HEARTBEAT && header.type != pkg.PKG_HEARTBEAT_RESPONSE) {
             console.log("Recv: ", header, data);
         }
@@ -513,7 +567,7 @@
             idGen: new IdGen(255),
             intervalId: setInterval(function () {
                 var id = goplay.heartbeat.idGen.next();
-                goplay.send(new Header(pkg.PKG_HEARTBEAT, pkg.ENCODING_JSON, id, pkg.STAT_OK, 0, ""));
+                goplay.send(new Header(pkg.PKG_HEARTBEAT, defaults.encoding, id, pkg.STAT_OK, 0, ""));
                 goplay.heartbeat.timeOutMap[id] = setTimeout(function () {
                     ++goplay.heartbeat.timeOutCount;
                     if (goplay.heartbeat.timeOutCount > heartbeat.MAX_TIMEOUT) {
@@ -563,8 +617,9 @@
     goplay.request = function (route, data, successCb, failCb) {
         goplay.idGen = goplay.idGen || new IdGen(255);
 
-        var header = new Header(pkg.PKG_REQUEST, pkg.ENCODING_JSON, goplay.idGen.next(), pkg.STAT_OK, 0, route);
-        data = JSON.stringify(data);
+        var header = new Header(pkg.PKG_REQUEST, defaults.encoding, goplay.idGen.next(), pkg.STAT_OK, 0, route);
+        var encoder = GetEncoder(header.encoding);
+        data = encoder.encode(data);
 
         var key = goplay.getCallbackKey(header);
         // console.log("key: ", key);
@@ -590,14 +645,16 @@
     goplay.notify = function (route, data) {
         goplay.idGen = goplay.idGen || new IdGen(255);
 
-        var header = new Header(pkg.PKG_NOTIFY, pkg.ENCODING_JSON, goplay.idGen.next(), pkg.STAT_OK, 0, route);
-        data = JSON.stringify(data);
+        var header = new Header(pkg.PKG_NOTIFY, defaults.encoding, goplay.idGen.next(), pkg.STAT_OK, 0, route);
+        var encoder = GetEncoder(header.encoding);
+        data = encoder.encode(data);
 
         goplay.send(header, data);
     }
 
     goplay = Emitter(goplay);
     goplay.pkg = pkg;
+    goplay.defaults = defaults;
 
     exports.Header = Header;
     exports.Emitter = Emitter;
