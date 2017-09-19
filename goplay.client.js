@@ -507,13 +507,13 @@
     goplay.send = function (header, data) {
         data = data || undefined;
         // data = strencode(data);
-        console.log("header:", header);
-        console.log("data:", data);
+        // console.log("header:", header);
+        // console.log("data:", data);
         // var strBuffer = strencode(data);
         header.contentSize = data ? data.length : 0;
         var bytes = header_encode(header);
-        console.log("header_encode: ", bytes);
-        console.log("header_decode: ", header_decode(bytes));
+        // console.log("header_encode: ", bytes);
+        // console.log("header_decode: ", header_decode(bytes));
         // bytes = copyArray(bytes, bytes.length, data, 0, data.length);
         if (header.contentSize > 0) bytes = bytes.writeBytes(data);
         //console.log("send:", bytes);
