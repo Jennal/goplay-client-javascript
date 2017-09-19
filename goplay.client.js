@@ -1,6 +1,10 @@
 (function (exports, ByteArray) {
     /* defines */
     var goplay = {};
+    var info = {
+        "ClientType": "GoPlay/Javascript",
+        "ClientVersion": "0.0.1"
+    };
     var pkg = {
         "PKG_NOTIFY"              : 0x00,
         "PKG_REQUEST"             : 0x01,
@@ -24,9 +28,14 @@
         "STAT_ERR_TIMEOUT"       : 0x93,
         "STAT_ERR_EMPTY_RESULT"  : 0x94
     };
+    var events = {
+        "CONNECTED"    : "__ON_CONNECTED",
+        "DISCONNECTED" : "__ON_DISCONNECTED",
+        "ERROR" : "__ON_ERROR"
+    };
     var defaults = {
         "encoding": pkg.ENCODING_JSON,
-    }
+    };
     var heartbeat = {
         "TIMEOUT": 3000,
         "INTERNAL": 15000,
@@ -273,8 +282,19 @@
         return this;
     }
 
+    function header_can_encode_route(header) {
+        return header.type != pkg.PKG_PUSH;
+    }
+
     function header_size(header) {
-        return 7 + header.route.length;
+        var size = 6; /* static size */
+        if ( ! header_can_encode_route(header)) {
+            size += (1 + header.route.length);
+        } else {
+            size += 2;
+        }
+
+        return size;
     }
 
     function header_encode(header) {
@@ -284,9 +304,15 @@
             .writeUint8(header.encoding)
             .writeUint8(header.id)
             .writeUint8(header.status)
-            .writeUint16(header.contentSize)
-            .writeUint8(header.route.length)
-            .writeString(header.route);
+            .writeUint16(header.contentSize);
+        
+        if ( ! header_can_encode_route(header)) {
+            bytes = bytes.writeUint8(header.route.length)
+                         .writeString(header.route);
+        } else {
+            var routeEncoded = goplay.getRouteEncoded(header.route);
+            bytes = bytes.writeUint16(routeEncoded);
+        }
 
         return bytes;
     }
@@ -300,9 +326,14 @@
         header.status = bytes.readUint8();
         header.contentSize = bytes.readUint16();
 
-        var routeLen = bytes.readUint8();
-        // console.log(routeLen);
-        header.route = bytes.readString(routeLen);
+        if ( ! header_can_encode_route(header)) {
+            var routeLen = bytes.readUint8();
+            // console.log(routeLen);
+            header.route = bytes.readString(routeLen);
+        } else {
+            var routeEncoded = bytes.readUint16();
+            header.route = goplay.getRoute(routeEncoded);
+        }
 
         return header;
     }
@@ -463,6 +494,7 @@
 
         ws.close();
         ws = null;
+        goplay.emit(events.DISCONNECTED);
     }
 
     goplay.isConnected = function () {
@@ -475,11 +507,13 @@
     goplay.send = function (header, data) {
         data = data || undefined;
         // data = strencode(data);
-        // console.log("data:", data);
+        console.log("header:", header);
+        console.log("data:", data);
         // var strBuffer = strencode(data);
         header.contentSize = data ? data.length : 0;
         var bytes = header_encode(header);
-        // console.log(header_decode(bytes));
+        console.log("header_encode: ", bytes);
+        console.log("header_decode: ", header_decode(bytes));
         // bytes = copyArray(bytes, bytes.length, data, 0, data.length);
         if (header.contentSize > 0) bytes = bytes.writeBytes(data);
         //console.log("send:", bytes);
@@ -509,7 +543,7 @@
 
     goplay.onopen = function (event) {
         console.log("onopen", event)
-        goplay.startHeartbeat();
+        goplay.sendHandshake();
     }
 
     goplay.onmessage = function (event) {
@@ -548,6 +582,9 @@
             case pkg.PKG_HEARTBEAT_RESPONSE:
                 goplay.onHeartbeat(header, data);
                 break;
+            case pkg.PKG_HAND_SHAKE_RESPONSE:
+                goplay.onHandshake(header, data);
+                break;
             default:
                 console.log("should not be here!!", header, data);
                 break;
@@ -555,12 +592,77 @@
     }
 
     goplay.onerror = function (event) {
-        console.log("onerror", event)
+        console.log("onerror", event);
+        goplay.emit(events.ERROR, event);
     }
 
     goplay.onclose = function (event) {
-        console.log("onclose", event)
+        console.log("onclose", event);
         goplay.stopHeartbeat();
+    }
+
+    goplay.getRouteEncoded = function (route) {
+        if ( ! goplay.handshake) return 0;
+
+        if (goplay.handshake.Routes.hasOwnProperty(route)) {
+            return goplay.handshake.Routes[route];
+        }
+        
+        return 0;
+    }
+
+    goplay.getRoute = function (routeEncoded) {
+        if ( ! goplay.handshake) return "";
+
+        for (var key in goplay.handshake.Routes) {
+            if (goplay.handshake.Routes.hasOwnProperty(key)) {
+                if (routeEncoded == goplay.handshake.Routes[key]) {
+                    return key;
+                }
+            }
+        }
+
+        return "";
+    }
+
+    goplay.sendHandshake = function () {
+        goplay.idGen = goplay.idGen || new IdGen(255);
+        var id = goplay.idGen.next();
+        var encoder = GetEncoder(defaults.encoding);
+        var data = encoder.encode({
+            "ClientType":    info.ClientType,
+            "ClientVersion": info.Version,
+            "DictMd5":       "md5"
+        });
+        goplay.send(new Header(
+            pkg.PKG_HAND_SHAKE,
+            defaults.encoding,
+            id,
+            pkg.STAT_OK,
+            0,
+            ""
+        ), data);
+    }
+
+    goplay.onHandshake = function (header, data) {
+        if (data.IsReconnect) {
+            return goplay.connect(data.ReconnectTo.Host, data.ReconnectTo.Port);
+        }
+
+        /*
+        type HandShakeResponse struct {
+            ServerVersion string            `protobuf:"bytes,1,opt,name=ServerVersion" json:"ServerVersion,omitempty"`
+            Now           string            `protobuf:"bytes,2,opt,name=Now" json:"Now,omitempty"`
+            HeartBeatRate int32             `protobuf:"varint,3,opt,name=HeartBeatRate" json:"HeartBeatRate,omitempty"`
+            Routes        map[string]uint32 `protobuf:"bytes,4,rep,name=Routes" json:"Routes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+            IsReconnect   bool              `protobuf:"varint,5,opt,name=IsReconnect" json:"IsReconnect,omitempty"`
+            ReconnectTo   *HostPort         `protobuf:"bytes,6,opt,name=ReconnectTo" json:"ReconnectTo,omitempty"`
+        }
+         */
+        goplay.handshake = data;
+        heartbeat.INTERNAL = data.HeartBeatRate;
+        goplay.startHeartbeat();
+        goplay.emit(events.CONNECTED);
     }
 
     goplay.startHeartbeat = function () {
@@ -619,6 +721,7 @@
         goplay.idGen = goplay.idGen || new IdGen(255);
 
         var header = new Header(pkg.PKG_REQUEST, defaults.encoding, goplay.idGen.next(), pkg.STAT_OK, 0, route);
+        //TODO: 0 param support
         var encoder = GetEncoder(header.encoding);
         data = encoder.encode(data);
 
@@ -647,6 +750,7 @@
         goplay.idGen = goplay.idGen || new IdGen(255);
 
         var header = new Header(pkg.PKG_NOTIFY, defaults.encoding, goplay.idGen.next(), pkg.STAT_OK, 0, route);
+        //TODO: 0 param support
         var encoder = GetEncoder(header.encoding);
         data = encoder.encode(data);
 
@@ -654,7 +758,9 @@
     }
 
     goplay = Emitter(goplay);
+    goplay.info = info;
     goplay.pkg = pkg;
+    goplay.events = events;
     goplay.defaults = defaults;
 
     exports.Header = Header;
