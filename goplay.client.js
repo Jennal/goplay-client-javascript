@@ -46,7 +46,15 @@
     };
     var ws = null; //websocket Object
 
+    /* protobuf */
+    var pb = null;
+    if (exports.protobuf && exports.protobuf.roots["default"] && exports.protobuf.roots["default"].pkg) pb = exports.protobuf.roots["default"].pkg;
+
     /* vvvvvv Utility Functions Start vvvvvv */
+    function isProtobuf() {
+        return defaults.encoding == pkg.ENCODING_PROTOBUF;
+    }
+
     /**
      * Inherit the emitter properties.
      *
@@ -250,10 +258,13 @@
 
     var protobufEncoder = {
         "encode": function(obj) {
-
+            var t = findProtobuf(obj.constructor.name);
+            if ( ! t) throw new Error("not a protobuf object!");
+            // console.log(obj.constructor.name, obj, t);
+            return t.encode(obj).finish();
         },
         "decode": function(buffer) {
-
+            return buffer;
         }
     };
 
@@ -629,11 +640,13 @@
         goplay.idGen = goplay.idGen || new IdGen(255);
         var id = goplay.idGen.next();
         var encoder = GetEncoder(defaults.encoding);
-        var data = encoder.encode({
+        var data = {
             "ClientType":    info.ClientType,
             "ClientVersion": info.Version,
             "DictMd5":       "md5"
-        });
+        };
+        if (isProtobuf()) data = pb.HandShakeClientData.create(data);
+        data = encoder.encode(data);
         goplay.send(new Header(
             pkg.PKG_HAND_SHAKE,
             defaults.encoding,
@@ -659,6 +672,7 @@
             ReconnectTo   *HostPort         `protobuf:"bytes,6,opt,name=ReconnectTo" json:"ReconnectTo,omitempty"`
         }
          */
+        if (isProtobuf()) data = pb.HandShakeResponse.decode(data);
         goplay.handshake = data;
         heartbeat.INTERNAL = data.HeartBeatRate;
         goplay.startHeartbeat();
@@ -739,6 +753,7 @@
             if (status == pkg.STAT_OK) {
                 successCb(data);
             } else {
+                if (isProtobuf()) data = pb.ErrorMessage.decode(data);
                 failCb(data);
             }
         });
