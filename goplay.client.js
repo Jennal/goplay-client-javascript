@@ -258,10 +258,9 @@
 
     var protobufEncoder = {
         "encode": function(obj) {
-            var t = findProtobuf(obj.constructor.name);
-            if ( ! t) throw new Error("not a protobuf object!");
+            if (!obj.constructor || !obj.constructor.encode) throw new Error("not a protobuf object!");
             // console.log(obj.constructor.name, obj, t);
-            return t.encode(obj).finish();
+            return obj.constructor.encode(obj).finish();
         },
         "decode": function(buffer) {
             return buffer;
