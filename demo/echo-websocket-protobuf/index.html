@@ -45,7 +45,7 @@
         }
 
         function requestError() {
-            goplay.request("echo.services.error", PBString.create(), function (line) {
+            goplay.request("echo.services.error", function (line) {
                 line = PBString.decode(line).Value;
                 console.log("Request error callback: ", line);
                 writeLn("Request error callback: " + line);

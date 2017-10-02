@@ -36,7 +36,7 @@
         }
 
         function requestError() {
-            goplay.request("echo.services.error", "", function (line) {
+            goplay.request("echo.services.error", function (line) {
                 console.log("Request error callback: ", line);
                 writeLn("Request error callback: " + line);
             }, function (err) {

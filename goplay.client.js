@@ -247,6 +247,8 @@
     /* vvvvvv Encoder Start vvvvvv */
     var jsonEncoder = {
         "encode": function(obj) {
+            if(obj == undefined) return obj;
+
             obj = JSON.stringify(obj);
             return strencode(obj);
         },
@@ -258,6 +260,8 @@
 
     var protobufEncoder = {
         "encode": function(obj) {
+            if(obj == undefined) return obj;
+
             if (!obj.constructor || !obj.constructor.encode) throw new Error("not a protobuf object!");
             // console.log(obj.constructor.name, obj, t);
             return obj.constructor.encode(obj).finish();
@@ -730,11 +734,25 @@
         return header.route + "-" + header.id;
     }
 
-    goplay.request = function (route, data, successCb, failCb) {
+    //arguments[4] => route, data, successCb, failCb
+    //arguments[3] => route, successCb, failCb
+    goplay.request = function () {
         goplay.idGen = goplay.idGen || new IdGen(255);
+        var route, data, successCb, failCb;
+        if(arguments.length == 4) {
+            route = arguments[0];
+            data = arguments[1];
+            successCb = arguments[2];
+            failCb = arguments[3];
+        } else if(arguments.length == 3) {
+            route = arguments[0];
+            successCb = arguments[1];
+            failCb = arguments[2];
+        } else {
+            throw new Error("arguments length not valid!");
+        }
 
         var header = new Header(pkg.PKG_REQUEST, defaults.encoding, goplay.idGen.next(), pkg.STAT_OK, 0, route);
-        //TODO: 0 param support
         var encoder = GetEncoder(header.encoding);
         data = encoder.encode(data);
 
@@ -760,8 +778,19 @@
         goplay.send(header, data);
     }
 
-    goplay.notify = function (route, data) {
+    //arguments[2] => route, data
+    //arguments[1] => route
+    goplay.notify = function () {
         goplay.idGen = goplay.idGen || new IdGen(255);
+        var route, data;
+        if(arguments.length == 2) {
+            route = arguments[0];
+            data = arguments[1];
+        } else if(arguments.length == 1) {
+            route = arguments[0];
+        } else {
+            throw new Error("arguments length not valid!");
+        }
 
         var header = new Header(pkg.PKG_NOTIFY, defaults.encoding, goplay.idGen.next(), pkg.STAT_OK, 0, route);
         //TODO: 0 param support
