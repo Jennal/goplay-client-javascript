@@ -793,7 +793,6 @@
         }
 
         var header = new Header(pkg.PKG_NOTIFY, defaults.encoding, goplay.idGen.next(), pkg.STAT_OK, 0, route);
-        //TODO: 0 param support
         var encoder = GetEncoder(header.encoding);
         data = encoder.encode(data);
 
