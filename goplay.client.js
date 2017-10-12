@@ -645,7 +645,7 @@
         var encoder = GetEncoder(defaults.encoding);
         var data = {
             "ClientType":    info.ClientType,
-            "ClientVersion": info.Version,
+            "ClientVersion": info.ClientVersion,
             "DictMd5":       "md5"
         };
         if (isProtobuf()) data = pb.HandShakeClientData.create(data);
