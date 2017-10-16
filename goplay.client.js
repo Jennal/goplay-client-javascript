@@ -543,7 +543,7 @@
             return null;
         }
 
-        var data = null;
+        var data = new ByteArray(0);
         if (header.contentSize > 0) data = goplay.buffer.readBytes(header.contentSize);
 
         var start = header_size(header) + header.contentSize;
@@ -574,7 +574,7 @@
         if (!pack) return;
 
         var header = pack.header;
-        var data = undefined;
+        var data = pack.data;
         if (header.contentSize > 0) {
             var encoder = GetEncoder(pack.header.encoding);
             data = encoder.decode(pack.data);
