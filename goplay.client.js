@@ -504,9 +504,8 @@
 
     goplay.disconnect = function () {
         if (!ws) return;
-        if (ws.readyState > 1) return;
 
-        ws.close();
+        if (ws.readyState <= 1) ws.close();
         ws = null;
         goplay.emit(events.DISCONNECTED);
     }
@@ -613,6 +612,7 @@
     goplay.onclose = function (event) {
         console.log("onclose", event);
         goplay.stopHeartbeat();
+        goplay.disconnect();
     }
 
     goplay.getRouteEncoded = function (route) {
