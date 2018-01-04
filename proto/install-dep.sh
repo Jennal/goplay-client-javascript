@@ -1,2 +1,2 @@
 #!/bin/sh
-npm install -g pbjs
+npm install -g protobufjs
